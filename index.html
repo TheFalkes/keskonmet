@@ -168,6 +168,16 @@ header p{margin:4px 0 0;font-size:14px;color:var(--text2);font-weight:500}
 .dot.ok{background:var(--green);box-shadow:0 0 8px var(--green)} .dot.err{background:var(--red)} .dot.wait{background:var(--orange)}
 .hint{font-size:12.5px;color:var(--text2);margin:8px 4px 0;line-height:1.45}
 
+.sheet{max-height:92dvh;max-height:92vh;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.sheet::-webkit-scrollbar{display:none}
+.opt-note{font-weight:500}
+.gchips{display:flex;flex-wrap:wrap;gap:8px}
+.gchip{height:36px;padding:0 14px;border-radius:999px;font-size:14px;font-weight:650;background:var(--glass);border:1px solid var(--stroke-soft);color:var(--text);transition:all .25s cubic-bezier(.3,1.4,.5,1)}
+.gchip.on{background:var(--accent);color:#fff;border-color:transparent;box-shadow:0 4px 12px rgba(10,132,255,.4)}
+.gchip:active{transform:scale(.93)}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:-4px}
+.tag{font-size:12px;font-weight:650;padding:3px 10px;border-radius:999px;background:var(--glass-strong);border:1px solid var(--stroke-soft);color:var(--text2)}
+.card h3,.card .tags{cursor:pointer}
 #toast{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));left:50%;transform:translate(-50%,-140%);z-index:40;padding:11px 18px;border-radius:999px;font-weight:650;font-size:14px;
   transition:transform .45s cubic-bezier(.3,1.3,.5,1);max-width:90%;text-align:center}
 #toast.show{transform:translate(-50%,0)}
@@ -209,6 +219,8 @@ header p{margin:4px 0 0;font-size:14px;color:var(--text2);font-weight:500}
   <div class="grab"></div>
   <h2 id="addTitle">Ajouter un film</h2>
   <input class="field" id="addInput" type="text" placeholder="Titre" autocomplete="off" enterkeyhint="done">
+  <div class="lbl">Genres <span class="opt-note">(optionnel)</span></div>
+  <div class="gchips" id="addGenres"></div>
   <button class="primary" id="addOk" disabled>Ajouter</button>
   <button class="ghost" data-close>Annuler</button>
 </div>
@@ -225,6 +237,8 @@ header p{margin:4px 0 0;font-size:14px;color:var(--text2);font-weight:500}
   </div>
   <div class="lbl">Type</div>
   <div class="row" id="rndT"><button class="opt" data-t="film">Film</button><button class="opt" data-t="serie">Série</button></div>
+  <div class="lbl">Genres <span class="opt-note">(aucun coché = tous les titres)</span></div>
+  <div class="gchips" id="rndG"></div>
   <div class="result glass" id="rndRes"><small>Prêt ?</small><strong>Choisis une liste puis tire au sort</strong></div>
   <button class="primary" id="rndGo">Tirer au sort</button>
   <button class="ghost" id="rndSeen" style="display:none">Marquer comme vu</button>
@@ -251,12 +265,14 @@ header p{margin:4px 0 0;font-size:14px;color:var(--text2);font-weight:500}
 /* ================= CONFIG =================
    Colle ici l'URL de ta Firebase Realtime Database pour que tous les
    appareils se connectent automatiquement. Exemple :
-   const FIREBASE_URL = "https://keskonmet-default-rtdb.europe-west1.firebasedatabase.app/";
+   const FIREBASE_URL = "https://cine-foyer-default-rtdb.europe-west1.firebasedatabase.app";
 */
-const FIREBASE_URL = "https://keskonmet-default-rtdb.europe-west1.firebasedatabase.app/";
+const FIREBASE_URL = "https://keskonmet-default-rtdb.europe-west1.firebasedatabase.app";
 /* ========================================= */
 
 const PROFILES = ["Alexis","Marlène","Ayden","Famille"];
+const GENRES = ["Action","Aventure","Animation","Comédie","Documentaire","Drame","Famille","Fantastique","Historique","Horreur","Policier","Romance","Science-fiction","Thriller"];
+const gs = i => (i && i.g) ? String(i.g).split("|").filter(Boolean) : [];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const ls = {
@@ -351,9 +367,10 @@ function remote(method,id,body){
     .then(r=>{ if(!r.ok) throw 0 })
     .catch(()=>toast("Échec de l’envoi. Vérifie la connexion."));
 }
-function addItem(title){
+function addItem(title,genres){
   const id = Date.now().toString(36)+Math.random().toString(36).slice(2,6);
   const it = {title,p:state.p,t:state.t,vu:false,cours:false,strem:false,ts:Date.now()};
+  if(genres && genres.length) it.g = genres.join("|");
   state.items[id] = it; persist(); render(); remote("PUT",id,it);
 }
 function patchItem(id,patch){
@@ -389,7 +406,8 @@ function render(){
   } else {
     list.innerHTML = arr.map(([id,i],n)=>`
       <div class="card glass${i.vu?" seen":""}" data-id="${id}" style="animation-delay:${Math.min(n,8)*35}ms">
-        <div class="top"><h3>${esc(i.title)}</h3><button class="del" data-a="del" aria-label="Supprimer">${ICON.del}</button></div>
+        <div class="top"><h3 data-a="edit">${esc(i.title)}</h3><button class="del" data-a="del" aria-label="Supprimer">${ICON.del}</button></div>
+        ${gs(i).length?`<div class="tags" data-a="edit">${gs(i).map(x=>`<span class="tag">${esc(x)}</span>`).join("")}</div>`:""}
         <div class="chips">
           <button class="chip vu${i.vu?" on":""}" data-a="vu">${ICON.vu}Vu</button>
           <button class="chip cours${i.cours?" on":""}" data-a="cours">${ICON.cours}En cours</button>
@@ -411,6 +429,7 @@ addEventListener("resize",moveInd);
 $("#list").addEventListener("click",e=>{
   const btn = e.target.closest("[data-a]"); if(!btn) return;
   const id = btn.closest(".card").dataset.id, it = state.items[id], a = btn.dataset.a;
+  if(a==="edit"){ openEdit(id); return }
   if(a==="del"){ if(confirm(`Supprimer « ${it.title} » ?`)) delItem(id); return }
   if(a==="vu"){ patchItem(id, it.vu ? {vu:false} : {vu:true,cours:false}); }
   if(a==="cours"){ patchItem(id, it.cours ? {cours:false} : {cours:true,vu:false}); }
@@ -427,24 +446,48 @@ function closeSheets(){ $$(".scrim,.sheet").forEach(x=>x.classList.remove("open"
 $$(".scrim").forEach(s=>s.onclick=closeSheets);
 $$("[data-close]").forEach(b=>b.onclick=closeSheets);
 
-/* Ajout */
-$("#fab").onclick=()=>{
+/* Ajout / modification */
+const addSel = new Set(); let editId = null;
+function mountChips(el,set,cb){
+  el.innerHTML = GENRES.map(g=>`<button type="button" class="gchip${set.has(g)?" on":""}" data-g="${g}">${g}</button>`).join("");
+  el.onclick = e=>{
+    const b = e.target.closest("[data-g]"); if(!b) return;
+    const g = b.dataset.g;
+    if(set.has(g)) set.delete(g); else set.add(g);
+    b.classList.toggle("on"); if(cb) cb();
+  };
+}
+function openAdd(){
+  editId = null; addSel.clear(); mountChips($("#addGenres"),addSel);
   $("#addTitle").textContent = state.t==="film" ? `Ajouter un film · ${PROFILES[state.p]}` : `Ajouter une série · ${PROFILES[state.p]}`;
-  $("#addInput").value=""; $("#addOk").disabled=true; openSheet("Add");
+  $("#addInput").value=""; $("#addOk").textContent="Ajouter"; $("#addOk").disabled=true; openSheet("Add");
   setTimeout(()=>$("#addInput").focus(),350);
-};
+}
+function openEdit(id){
+  const it = state.items[id]; if(!it) return;
+  editId = id; addSel.clear(); gs(it).forEach(g=>addSel.add(g)); mountChips($("#addGenres"),addSel);
+  $("#addTitle").textContent = it.t==="film" ? "Modifier le film" : "Modifier la série";
+  $("#addInput").value = it.title; $("#addOk").textContent="Enregistrer"; $("#addOk").disabled=false; openSheet("Add");
+}
+$("#fab").onclick = openAdd;
 $("#addInput").oninput=e=>{ $("#addOk").disabled = !e.target.value.trim(); };
 function submitAdd(){
   const v = $("#addInput").value.trim(); if(!v) return;
-  const dup = Object.values(state.items).some(i=>i&&i.p===state.p&&i.t===state.t&&i.title.toLowerCase()===v.toLowerCase());
+  const cur = editId ? state.items[editId] : null;
+  const t = cur ? cur.t : state.t, p = cur ? cur.p : state.p;
+  const dup = Object.entries(state.items).some(([id,i])=>id!==editId&&i&&i.p===p&&i.t===t&&i.title.toLowerCase()===v.toLowerCase());
   if(dup){ toast("Ce titre est déjà dans la liste"); return }
-  addItem(v); closeSheets();
+  const genres = GENRES.filter(g=>addSel.has(g));
+  if(cur) patchItem(editId,{title:v,g:genres.length?genres.join("|"):null});
+  else addItem(v,genres);
+  closeSheets();
 }
 $("#addOk").onclick=submitAdd;
-$("#addInput").onkeydown=e=>{ if(e.key==="Enter") submitAdd(); };
+$("#addInput").onkeydown=e=>{ if(e.key==="Enter") e.target.blur(); };
 
 /* Aléatoire */
 const rnd = {p:state.p,t:state.t,pick:null,busy:false};
+const rndSel = new Set();
 function rndRender(){
   $$("#rndP .opt").forEach(b=>b.classList.toggle("on",+b.dataset.p===rnd.p));
   $$("#rndT .opt").forEach(b=>b.classList.toggle("on",b.dataset.t===rnd.t));
@@ -453,18 +496,19 @@ $$("#rndP .opt").forEach(b=>b.onclick=()=>{rnd.p=+b.dataset.p;rndRender()});
 $$("#rndT .opt").forEach(b=>b.onclick=()=>{rnd.t=b.dataset.t;rndRender()});
 $("#btnRand").onclick=()=>{
   rnd.p=state.p; rnd.t=state.t; rnd.pick=null; rndRender();
+  rndSel.clear(); mountChips($("#rndG"),rndSel);
   $("#rndRes").className="result glass"; $("#rndRes").innerHTML="<small>Prêt ?</small><strong>Choisis une liste puis tire au sort</strong>";
   $("#rndSeen").style.display="none"; $("#rndGo").textContent="Tirer au sort";
   openSheet("Rand");
 };
 $("#rndGo").onclick=()=>{
   if(rnd.busy) return;
-  const pool = Object.entries(state.items).filter(([,i])=>i&&i.p===rnd.p&&i.t===rnd.t&&!i.vu);
+  const pool = Object.entries(state.items).filter(([,i])=>i&&i.p===rnd.p&&i.t===rnd.t&&!i.vu&&(rndSel.size===0||gs(i).some(g=>rndSel.has(g))));
   const res = $("#rndRes"), what = rnd.t==="film"?"film":"série";
   $("#rndSeen").style.display="none";
   if(!pool.length){
     res.className="result glass";
-    res.innerHTML=`<small>${PROFILES[rnd.p]}</small><strong>Aucun ${what} à voir</strong>`; rnd.pick=null; return;
+    res.innerHTML=`<small>${PROFILES[rnd.p]}</small><strong>${rndSel.size?`Aucun ${what} à voir dans ces genres`:`Aucun ${what} à voir`}</strong>`; rnd.pick=null; return;
   }
   rnd.busy=true; res.className="result glass spin";
   let n=0; const total=14;
@@ -475,7 +519,7 @@ $("#rndGo").onclick=()=>{
       const [id,f]=pool[Math.floor(Math.random()*pool.length)];
       rnd.pick=id; rnd.busy=false;
       res.className="result glass pop";
-      res.innerHTML=`<small>Ce soir : ${what} de ${PROFILES[rnd.p]}</small><strong>${esc(f.title)}</strong>`;
+      res.innerHTML=`<small>Ce soir : ${what} de ${PROFILES[rnd.p]}</small><strong>${esc(f.title)}</strong>${gs(f).length?`<small>${esc(gs(f).join(", "))}</small>`:""}`;
       $("#rndSeen").style.display="block"; $("#rndGo").textContent="Relancer";
       if(navigator.vibrate) navigator.vibrate(20);
     }
@@ -510,7 +554,7 @@ document.addEventListener("touchend",e=>{
 },{passive:false});
 document.addEventListener("touchmove",e=>{
   if(e.touches.length>1) e.preventDefault();
-  else if(!e.target.closest("#list")) e.preventDefault();
+  else if(!e.target.closest("#list,.sheet")) e.preventDefault();
 },{passive:false});
 document.addEventListener("contextmenu",e=>e.preventDefault());
 if(window.visualViewport){
